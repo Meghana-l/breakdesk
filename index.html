@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BreakDesk — Live Trade Reconciliation</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0c0f; --surface:#12151a; --surface2:#1a1f28;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.13);
+  --text:#e8eaf0; --muted:#6b7280;
+  --accent:#00d4aa; --accent2:#0ea5e9;
+  --warn:#f59e0b; --danger:#ef4444; --success:#22c55e;
+  --mono:'IBM Plex Mono',monospace; --sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(0,212,170,0.025) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(0,212,170,0.025) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+.shell{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:0 24px 48px}
+
+/* ── Top bar ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--border);margin-bottom:22px}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;font-weight:500;color:#000}
+.logo-name{font-size:15px;font-weight:500;letter-spacing:-.3px}
+.logo-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.badge-live{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.2);padding:4px 10px;border-radius:20px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.run-btn{background:var(--accent);color:#000;border:none;font-family:var(--sans);font-size:13px;font-weight:500;padding:8px 20px;border-radius:6px;cursor:pointer;transition:opacity .2s,transform .1s;display:flex;align-items:center;gap:6px}
+.run-btn:hover{opacity:.85}
+.run-btn:active{transform:scale(.97)}
+.run-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Loading overlay ── */
+#loader{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+.loader-logo{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.loader-mark{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;font-weight:500;color:#000}
+.loader-name{font-size:18px;font-weight:500}
+.loader-steps{display:flex;flex-direction:column;gap:8px;min-width:320px}
+.lstep{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;color:var(--muted);transition:color .3s}
+.lstep.done{color:var(--accent)}
+.lstep.active{color:var(--text)}
+.lstep-icon{width:16px;text-align:center}
+.progress-bar{width:320px;height:3px;background:var(--border2);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;width:0%;transition:width .4s ease}
+.loader-msg{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+/* ── Price ticker ── */
+.ticker-bar{display:flex;gap:0;overflow:hidden;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.ticker-item{display:flex;align-items:center;gap:8px;padding:8px 16px;border-right:1px solid var(--border);flex:1}
+.ticker-item:last-child{border-right:none}
+.ticker-sym{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase}
+.ticker-price{font-family:var(--mono);font-size:13px;font-weight:500}
+.ticker-chg{font-family:var(--mono);font-size:10px}
+.up{color:var(--success)}
+.dn{color:var(--danger)}
+
+/* ── KPI row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;position:relative;overflow:hidden}
+.kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kpi-c,var(--accent))}
+.kpi-label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.kpi-value{font-size:22px;font-weight:300;letter-spacing:-1px}
+.kpi-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px}
+
+/* ── Main grid ── */
+.main-grid{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.panel-head{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:12px;font-weight:500;letter-spacing:.3px}
+.panel-meta{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+/* ── Filters ── */
+.filters{padding:10px 20px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.fbtn{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s}
+.fbtn.on{border-color:var(--accent);color:var(--accent);background:rgba(0,212,170,0.08)}
+.fbtn:hover:not(.on){color:var(--text)}
+
+/* ── Table ── */
+.table-wrap{max-height:480px;overflow-y:auto}
+.table-wrap::-webkit-scrollbar{width:3px}
+.table-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+table{width:100%;border-collapse:collapse}
+th{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);font-weight:400;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+.erow{cursor:pointer;transition:background .1s}
+.erow:hover{background:var(--surface2)}
+.erow.sel{background:rgba(0,212,170,0.05);border-left:2px solid var(--accent)}
+.erow td:first-child{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:3px;font-weight:500;white-space:nowrap}
+.b-critical{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+.b-high{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.2)}
+.b-medium{background:rgba(14,165,233,.12);color:#38bdf8;border:1px solid rgba(14,165,233,.2)}
+.b-low{background:rgba(107,114,128,.12);color:#9ca3af;border:1px solid rgba(107,114,128,.2)}
+.ap{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;border:1px solid var(--border2);color:var(--muted)}
+.ap-eq{border-color:rgba(0,212,170,.3);color:var(--accent)}
+.ap-fx{border-color:rgba(14,165,233,.3);color:var(--accent2)}
+.ap-fu{border-color:rgba(245,158,11,.3);color:var(--warn)}
+.ap-da{border-color:rgba(168,85,247,.3);color:#a78bfa}
+
+/* ── Confidence bar ── */
+.cbar-wrap{display:flex;align-items:center;gap:6px}
+.cbar{height:4px;border-radius:2px;background:var(--border2);width:48px}
+.cfill{height:100%;border-radius:2px;background:var(--accent)}
+.cval{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:28px}
+
+/* ── Sidebar ── */
+.sidebar{display:flex;flex-direction:column;gap:14px}
+.detail-body{padding:16px 20px}
+.detail-empty{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.9}
+.drow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.drow:last-child{border:none}
+.dlabel{color:var(--muted)}
+.dval{font-family:var(--mono);font-size:11px;text-align:right;max-width:190px;word-break:break-all}
+.break-box{margin-top:12px;padding:12px 14px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.15);border-radius:6px}
+.break-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.break-amt{color:var(--danger);font-size:20px;font-weight:300;letter-spacing:-.5px;font-family:var(--mono)}
+.ai-box{margin-top:10px;padding:12px 14px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.15);border-radius:6px}
+.ai-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.ai-cause{font-size:12px;color:var(--text);line-height:1.7;margin-bottom:8px}
+.ai-action-text{font-size:11px;color:var(--accent2);line-height:1.7;padding-top:8px;border-top:1px solid var(--border)}
+.action-row{display:flex;gap:8px;margin-top:12px}
+.abtn{flex:1;padding:7px 0;border-radius:6px;font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;border:none}
+.abtn-p{background:rgba(0,212,170,.12);color:var(--accent);border:1px solid rgba(0,212,170,.22)}
+.abtn-p:hover{background:rgba(0,212,170,.2)}
+.abtn-g{background:transparent;color:var(--muted);border:1px solid var(--border2)}
+.abtn-g:hover{color:var(--text)}
+
+/* ── Stats panel ── */
+.stat-rows{padding:0 20px}
+.stat-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.stat-row:last-child{border:none}
+.slabel{color:var(--muted)}
+.sval{font-family:var(--mono);font-size:12px}
+
+/* ── Break type bars ── */
+.btype-rows{padding:8px 20px}
+.btype-row{display:flex;align-items:center;gap:8px;padding:5px 0}
+.btype-label{font-size:11px;color:var(--muted);flex:1;white-space:nowrap}
+.btype-bg{height:4px;background:var(--border2);border-radius:2px;width:70px}
+.btype-fill{height:100%;border-radius:2px;background:var(--accent2)}
+.btype-n{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:16px;text-align:right}
+
+/* ── Price source note ── */
+.src-note{font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 20px;border-top:1px solid var(--border);line-height:1.7}
+.src-note span{color:var(--accent)}
+
+.sig{text-align:center;padding:20px 0;font-family:var(--mono);font-size:10px;color:var(--muted);border-top:1px solid var(--border);margin-top:28px}
+.sig a{color:var(--accent);text-decoration:none}
+
+.timestamp{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+@media(max-width:960px){.main-grid{grid-template-columns:1fr}.kpi-row{grid-template-columns:repeat(3,1fr)}.ticker-bar{flex-wrap:wrap}}
+@media(max-width:600px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loader">
+  <div class="loader-logo">
+    <div class="loader-mark">Bk</div>
+    <div class="loader-name">BreakDesk</div>
+  </div>
+  <div class="loader-steps">
+    <div class="lstep" id="ls1"><span class="lstep-icon">○</span>Fetching live market prices via Polygon.io...</div>
+    <div class="lstep" id="ls2"><span class="lstep-icon">○</span>Generating synthetic trade positions...</div>
+    <div class="lstep" id="ls3"><span class="lstep-icon">○</span>Running SQL matching engine...</div>
+    <div class="lstep" id="ls4"><span class="lstep-icon">○</span>Classifying exceptions...</div>
+    <div class="lstep" id="ls5"><span class="lstep-icon">○</span>Building dashboard...</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+  <div class="loader-msg" id="loader-msg">Initialising...</div>
+</div>
+
+<div class="shell" id="app" style="display:none">
+
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-mark">Bk</div>
+      <div>
+        <div class="logo-name">BreakDesk</div>
+        <div class="logo-sub">AI TRADE RECONCILIATION · LIVE MARKET DATA</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="timestamp" id="run-time"></span>
+      <div class="badge-live"><div class="dot"></div>LIVE</div>
+      <button class="run-btn" id="run-btn" onclick="startPipeline()">↻ Re-run reconciliation</button>
+    </div>
+  </div>
+
+  <!-- Price ticker -->
+  <div class="ticker-bar" id="ticker-bar"></div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi" style="--kpi-c:var(--success)">
+      <div class="kpi-label">Match rate</div>
+      <div class="kpi-value" id="kpi-match">—</div>
+      <div class="kpi-sub" id="kpi-match-sub">—</div>
+    </div>
+    <div class="kpi" style="--kpi-c:var(--danger)">
+      <div class="kpi-label">Open exceptions</div>
+      <div class="kpi-value" id="kpi-exc">—</div>
+      <div class="kpi-sub" id="kpi-exc-sub">—</div>
+    </div>
+    <div class="kpi" style="--kpi-c:var(--warn)">
+      <div class="kpi-label">Total exposure</div>
+      <div class="kpi-value" id="kpi-exp">—</div>
+      <div class="kpi-sub">Unreconciled notional</div>
+    </div>
+    <div class="kpi" style="--kpi-c:var(--danger)">
+      <div class="kpi-label">Critical items</div>
+      <div class="kpi-value" id="kpi-crit">—</div>
+      <div class="kpi-sub">Require immediate action</div>
+    </div>
+    <div class="kpi" style="--kpi-c:var(--accent2)">
+      <div class="kpi-label">Price source</div>
+      <div class="kpi-value" style="font-size:16px;margin-top:2px">Polygon.io</div>
+      <div class="kpi-sub">Real market data</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+
+    <!-- Exception queue -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Exception queue</span>
+        <span class="panel-meta" id="exc-meta">—</span>
+      </div>
+      <div class="filters" id="filter-bar"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Trade ID</th><th>Asset</th><th>Instrument</th>
+              <th>Break type</th><th>Internal</th><th>CP value</th>
+              <th>Exposure</th><th>Severity</th><th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="exc-tbody"></tbody>
+        </table>
+      </div>
+      <div class="src-note">
+        Prices fetched live from <span>Polygon.io</span> · Trade positions synthetic ·
+        Breaks injected by reconciliation engine · Classifier: rule-based ops logic
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Break detail</span>
+          <span class="panel-meta" id="detail-id">— select a row</span>
+        </div>
+        <div class="detail-body" id="detail-body">
+          <div class="detail-empty">← Click any exception to see field-level break analysis and recommended ops action.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Run statistics</span>
+          <span class="panel-meta" id="stats-meta">—</span>
+        </div>
+        <div class="stat-rows" id="stat-rows"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Breaks by type</span>
+          <span class="panel-meta">This run</span>
+        </div>
+        <div class="btype-rows" id="btype-rows"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Pipeline architecture</span>
+          <span class="panel-meta">3 layers</span>
+        </div>
+        <div style="padding:14px 20px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:10px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent);min-width:20px">01</div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6"><strong style="color:var(--text);font-weight:500">Data layer</strong> — Real closing prices via Polygon.io REST API (equities, FX, crypto). Synthetic trade positions generated using live prices.</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent);min-width:20px">02</div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6"><strong style="color:var(--text);font-weight:500">Matching engine</strong> — Field-level comparison: price (0.1% tolerance), quantity (zero), commission ($0.50), settlement status, wallet address.</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--accent);min-width:20px">03</div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6"><strong style="color:var(--text);font-weight:500">AI classifier</strong> — Rule-based ops logic in browser. Full Claude API classification available via Python scripts in the repo.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="sig">
+    Built by <a href="https://meghana-l.github.io">Meghana Lakshminarayana Swamy</a> ·
+    MS Business Analytics · University of New Haven ·
+    <a href="mailto:meghana.drlnswamy@gmail.com">meghana.drlnswamy@gmail.com</a>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// CONFIG — Polygon.io free API key here
+// ════════════════════════════════════════════════════════════
+const POLYGON_KEY = 'tjC3o_pcA77brNmnxOtUYq9hSBFc4OjZ';
+
+// ── Reference instruments ────────────────────────────────────
+const EQUITIES = ['AAPL','MSFT','NVDA','GS','JPM','BAC'];
+const FX_PAIRS  = [['EUR','USD'],['GBP','USD'],['USD','JPY'],['AUD','USD']];
+const CRYPTO    = ['BTC','ETH','SOL'];
+const COUNTERPARTIES = ['GS Prime','JPM Clearing','Citi Sec','Morgan Sec','Barclays'];
+const TOLERANCE = { price:0.001, qty:0, commission:0.50, cash:1.0 };
+
+// ── Fallback prices (used when API unavailable / demo mode) ──
+const FALLBACK = {
+  AAPL:189.50, MSFT:415.20, NVDA:875.30, GS:438.10, JPM:198.40, BAC:38.90,
+  'EUR/USD':1.0812, 'GBP/USD':1.2740, 'USD/JPY':156.80, 'AUD/USD':0.6530,
+  BTC:67500, ETH:3420, SOL:145,
+};
+
+let STATE = { prices:{}, trades:[], exceptions:[], filter:'all', usingFallback:false };
+
+// ── Loader helpers ───────────────────────────────────────────
+function step(n, msg) {
+  for (let i=1;i<=5;i++) {
+    const el = document.getElementById('ls'+i);
+    if (i < n)  { el.className='lstep done'; el.querySelector('.lstep-icon').textContent='✓'; }
+    if (i === n){ el.className='lstep active'; el.querySelector('.lstep-icon').textContent='→'; }
+    if (i > n)  { el.className='lstep'; el.querySelector('.lstep-icon').textContent='○'; }
+  }
+  document.getElementById('progress').style.width = ((n-1)/5*100)+'%';
+  if (msg) document.getElementById('loader-msg').textContent = msg;
+}
+function finishLoad() {
+  document.getElementById('progress').style.width='100%';
+  setTimeout(()=>{
+    document.getElementById('loader').style.display='none';
+    document.getElementById('app').style.display='block';
+  },400);
+}
+
+// ── Fetch real prices from Polygon.io ───────────────────────
+async function fetchPrices() {
+  const prices = {};
+  const key = POLYGON_KEY;
+  if (key === 'YOUR_POLYGON_API_KEY') {
+    STATE.usingFallback = true;
+    return {...FALLBACK};
+  }
+  try {
+    // Equities — previous close
+    const eqResp = await Promise.allSettled(EQUITIES.map(t =>
+      fetch(`https://api.polygon.io/v2/aggs/ticker/${t}/prev?adjusted=true&apiKey=${key}`)
+        .then(r=>r.json())
+    ));
+    eqResp.forEach((r,i) => {
+      if (r.status==='fulfilled' && r.value.results?.[0])
+        prices[EQUITIES[i]] = r.value.results[0].c;
+      else prices[EQUITIES[i]] = FALLBACK[EQUITIES[i]];
+    });
+
+    // FX pairs
+    const fxResp = await Promise.allSettled(FX_PAIRS.map(([f,t]) =>
+      fetch(`https://api.polygon.io/v1/conversion/${f}/${t}?amount=1&precision=5&apiKey=${key}`)
+        .then(r=>r.json())
+    ));
+    fxResp.forEach((r,i) => {
+      const key2 = `${FX_PAIRS[i][0]}/${FX_PAIRS[i][1]}`;
+      if (r.status==='fulfilled' && r.value.converted)
+        prices[key2] = r.value.converted;
+      else prices[key2] = FALLBACK[key2];
+    });
+
+    // Crypto
+    const crResp = await Promise.allSettled(CRYPTO.map(c =>
+      fetch(`https://api.polygon.io/v2/aggs/ticker/X:${c}USD/prev?adjusted=true&apiKey=${key}`)
+        .then(r=>r.json())
+    ));
+    crResp.forEach((r,i) => {
+      if (r.status==='fulfilled' && r.value.results?.[0])
+        prices[CRYPTO[i]] = r.value.results[0].c;
+      else prices[CRYPTO[i]] = FALLBACK[CRYPTO[i]];
+    });
+
+  } catch(e) {
+    STATE.usingFallback = true;
+    return {...FALLBACK};
+  }
+  return prices;
+}
+
+// ── Seeded random (reproducible per run-date) ────────────────
+function makeRng(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
+// ── Trade generator ──────────────────────────────────────────
+function generateTrades(prices, n=150) {
+  const today = new Date();
+  const seed  = today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate();
+  const rng   = makeRng(seed);
+  const rand  = (a,b) => a + rng()*(b-a);
+  const randi = (a,b) => Math.floor(rand(a,b+1));
+  const pick  = arr  => arr[randi(0,arr.length-1)];
+  const tid   = ()   => 'TRD-' + String(randi(1000,9999));
+
+  const trades = [];
+  const seen   = new Set();
+  const assetPool = [
+    ...Array(5).fill('equity'),
+    ...Array(3).fill('fx'),
+    ...Array(2).fill('futures'),
+    ...Array(2).fill('digital'),
+  ];
+
+  // Inject break probabilities
+  const BREAK_PROB = {
+    price_mismatch:0.07, quantity_break:0.05, commission_error:0.04,
+    nostro_break:0.03, settlement_fail:0.025, wallet_mismatch:0.06, rate_discrepancy:0.06,
+  };
+
+  for (let i=0;i<n;i++) {
+    let id = tid();
+    while (seen.has(id)) id = tid();
+    seen.add(id);
+
+    const asset = pick(assetPool);
+    const cp    = pick(COUNTERPARTIES);
+    let instrument, basePrice, qty, notional, commission, wallet=null;
+
+    if (asset==='equity') {
+      instrument = pick(EQUITIES);
+      basePrice  = prices[instrument] || FALLBACK[instrument];
+      basePrice  = basePrice * (1 + rand(-0.005,0.005));
+      qty        = randi(100,5000);
+      notional   = basePrice*qty;
+      commission = notional * rand(0.0003,0.0008);
+    } else if (asset==='fx') {
+      const pair = pick(FX_PAIRS);
+      instrument = `${pair[0]}/${pair[1]}`;
+      basePrice  = (prices[instrument] || FALLBACK[instrument]) * (1+rand(-0.0005,0.0005));
+      qty        = randi(100000,5000000);
+      notional   = qty*basePrice;
+      commission = notional*0.00002;
+    } else if (asset==='futures') {
+      const futMap = {ES:prices.MSFT||5280,NQ:prices.NVDA||18450,CL:82.4,GC:2340};
+      instrument = pick(['ES','NQ','CL','GC']);
+      basePrice  = (futMap[instrument]||5000)*(1+rand(-0.002,0.002));
+      qty        = randi(1,200);
+      notional   = basePrice*qty;
+      commission = qty*rand(1.5,4.0);
+    } else {
+      instrument = pick(CRYPTO)+'/USD';
+      const sym  = instrument.split('/')[0];
+      basePrice  = (prices[sym]||FALLBACK[sym])*(1+rand(-0.003,0.003));
+      qty        = parseFloat(rand(0.01,10).toFixed(4));
+      notional   = basePrice*qty;
+      commission = notional*rand(0.001,0.003);
+      wallet     = '0x'+Array.from({length:10},()=>'0123456789ABCDEF'[randi(0,15)]).join('');
+    }
+
+    const internal = {
+      trade_id:id, asset_class:asset, instrument,
+      price:parseFloat(basePrice.toFixed(asset==='fx'?5:2)),
+      quantity:parseFloat(qty.toFixed(4)),
+      notional:parseFloat(notional.toFixed(2)),
+      commission:parseFloat(commission.toFixed(2)),
+      cash_position:parseFloat(notional.toFixed(2)),
+      settlement_status:'PENDING',
+      counterparty:cp, wallet_address:wallet,
+    };
+
+    // Inject one break type randomly
+    const cp_trade = {...internal};
+    let break_type = null;
+
+    const eligible = Object.entries(BREAK_PROB).filter(([k]) =>
+      !(k==='wallet_mismatch' && asset!=='digital') &&
+      !(k==='rate_discrepancy' && asset!=='fx')
+    );
+
+    for (const [bt, prob] of eligible) {
+      if (rng() < prob) {
+        if (bt==='price_mismatch') {
+          const d = rand(0.005,0.025) * (rng()<0.5?-1:1);
+          cp_trade.price = parseFloat((internal.price*(1+d)).toFixed(5));
+        } else if (bt==='quantity_break') {
+          const d = randi(1,Math.max(1,Math.floor(qty*0.05)));
+          cp_trade.quantity = parseFloat((qty-d).toFixed(4));
+        } else if (bt==='commission_error') {
+          cp_trade.commission = parseFloat((internal.commission*rand(1.3,1.8)).toFixed(2));
+        } else if (bt==='nostro_break') {
+          cp_trade.cash_position = parseFloat((internal.cash_position*rand(0.85,0.97)).toFixed(2));
+        } else if (bt==='settlement_fail') {
+          cp_trade.settlement_status = 'FAIL';
+        } else if (bt==='wallet_mismatch' && wallet) {
+          cp_trade.wallet_address = wallet.slice(0,-3)+Array.from({length:3},()=>'0123456789ABCDEF'[randi(0,15)]).join('');
+        } else if (bt==='rate_discrepancy') {
+          cp_trade.price = parseFloat((internal.price*rand(0.985,0.999)).toFixed(5));
+        }
+        break_type = bt;
+        break;
+      }
+    }
+
+    trades.push({ internal, cp:cp_trade, break_type });
+  }
+  return trades;
+}
+
+// ── Matching engine ──────────────────────────────────────────
+function matchTrades(trades) {
+  const exceptions = [];
+  trades.forEach(({ internal:i, cp:c, break_type }) => {
+    const priceDelta = Math.abs(i.price - c.price);
+    const pricePct   = priceDelta / (i.price||1);
+    if (pricePct > TOLERANCE.price) {
+      const amt = priceDelta * i.quantity;
+      exceptions.push(buildBreak(i, break_type||'price_mismatch', 'price', i.price, c.price, amt));
+    }
+    const qtyDelta = Math.abs(i.quantity - c.quantity);
+    if (qtyDelta > TOLERANCE.qty && c.quantity !== i.quantity) {
+      exceptions.push(buildBreak(i, 'quantity_break', 'quantity', i.quantity, c.quantity, qtyDelta*i.price));
+    }
+    const commDelta = Math.abs(i.commission - c.commission);
+    if (commDelta > TOLERANCE.commission) {
+      exceptions.push(buildBreak(i, 'commission_error', 'commission', i.commission, c.commission, commDelta));
+    }
+    const cashDelta = Math.abs(i.cash_position - c.cash_position);
+    if (cashDelta > TOLERANCE.cash && commDelta <= TOLERANCE.commission) {
+      exceptions.push(buildBreak(i, 'nostro_break', 'cash_position', i.cash_position, c.cash_position, cashDelta));
+    }
+    if (i.settlement_status !== c.settlement_status) {
+      exceptions.push(buildBreak(i, 'settlement_fail', 'settlement_status', i.settlement_status, c.settlement_status, i.notional));
+    }
+    if (i.asset_class==='digital' && i.wallet_address && c.wallet_address && i.wallet_address!==c.wallet_address) {
+      exceptions.push(buildBreak(i, 'wallet_mismatch', 'wallet_address', i.wallet_address, c.wallet_address, i.notional));
+    }
+  });
+  return exceptions;
+}
+
+function buildBreak(trade, break_type, field, ival, cval, amt) {
+  const a = Math.abs(amt);
+  const severity = a>500000?'critical':a>100000?'high':a>10000?'medium':'low';
+  return {
+    trade_id:trade.trade_id, asset_class:trade.asset_class,
+    instrument:trade.instrument, counterparty:trade.counterparty,
+    break_type, field,
+    internal_value: String(typeof ival==='number'?parseFloat(ival.toFixed(5)):ival),
+    counterparty_value: String(typeof cval==='number'?parseFloat(cval.toFixed(5)):cval),
+    break_amount: parseFloat(a.toFixed(2)),
+    severity, status:'open',
+  };
+}
+
+// ── Rule-based classifier ────────────────────────────────────
+function classify(ex) {
+  const inst = ex.instrument;
+  const cp   = ex.counterparty;
+  const amt  = ex.break_amount;
+  const iv   = ex.internal_value;
+  const cv   = ex.counterparty_value;
+
+  const classes = {
+    price_mismatch: {
+      root: `Internal price ${iv} vs ${cp} confirmation ${cv} on ${inst}. Likely stale price feed or different closing auction venue used at booking.`,
+      action: `Request same-timestamp price confirmation from ${cp}. Verify against exchange official closing auction price. Reconcile price source.`,
+      tags:['PRICE_FEED','STALE','T+0'],
+      conf: amt>100000?88:amt>20000?84:78,
+    },
+    rate_discrepancy: {
+      root: `FX rate discrepancy on ${inst}: internal ${iv} vs ${cp} settlement rate ${cv}. Execution timestamp may not match rate fixing window.`,
+      action: `Pull FX rate from fixing source at execution timestamp. Request rate confirmation from ${cp} and reconcile against WM/Reuters fixing.`,
+      tags:['FX','RATE_LAG','FIXING'],
+      conf: amt>100000?91:85,
+    },
+    quantity_break: {
+      root: `Quantity mismatch on ${inst}: internal ${iv} units vs ${cp} confirmation of ${cv}. Likely partial fill booked as full execution.`,
+      action: `Request fill confirmation breakdown from ${cp}. Check for partial fills across venues. Amend booking if confirmed.`,
+      tags:['PARTIAL_FILL','QUANTITY','PRIME'],
+      conf: amt>50000?93:87,
+    },
+    commission_error: {
+      root: `Commission overbilled by ${cp} on ${inst}: invoiced ${cv} vs agreed ${iv}. Commission schedule change may not have been applied.`,
+      action: `Pull executed commission schedule from ${cp} portal. Dispute invoice if overbilled. Cross-check against signed commission agreement.`,
+      tags:['COMMISSION','INVOICE','BROKER'],
+      conf: 92,
+    },
+    nostro_break: {
+      root: `Cash position shortfall of $${amt.toLocaleString('en-US',{maximumFractionDigits:0})} in nostro vs ${cp} ledger. Likely T+1 posting lag or unprocessed wire.`,
+      action: `Monitor at 09:00 next business day. If break persists, escalate to cash management and request ${cp} SWIFT confirmation.`,
+      tags:['NOSTRO','CASH','T+1'],
+      conf: 79,
+    },
+    settlement_fail: {
+      root: `${cp} confirms settlement failure on ${inst}. Internal record shows PENDING — counterparty inventory insufficient for delivery.`,
+      action: `Contact ${cp} prime desk immediately. Consider recall from lending desk. Risk of buy-in and fail charges. Escalate to settlement ops.`,
+      tags:['SETTLEMENT','FAIL','URGENT'],
+      conf: 60,
+      escalate:true,
+    },
+    wallet_mismatch: {
+      root: `Digital asset wallet mismatch on ${inst}: internal ${iv} vs custodian record ${cv}. Address rotation may not have propagated to internal systems.`,
+      action: `Verify correct wallet with custodian before settlement window closes. Risk of misdirected funds. Do not settle until confirmed.`,
+      tags:['WALLET','CUSTODIAN','URGENT'],
+      conf: 82,
+      escalate:true,
+    },
+  };
+  return classes[ex.break_type] || {
+    root:'Break requires manual investigation.',
+    action:'Escalate to senior ops analyst.',
+    tags:['MANUAL'],conf:60,
+  };
+}
+
+// ── Render helpers ───────────────────────────────────────────
+const apCls = {equity:'ap-eq',fx:'ap-fx',futures:'ap-fu',digital:'ap-da'};
+const apLbl = {equity:'EQ',fx:'FX',futures:'FU',digital:'DA'};
+const bCls  = {critical:'b-critical',high:'b-high',medium:'b-medium',low:'b-low'};
+
+function fmt(n,dec=0) { return Number(n).toLocaleString('en-US',{maximumFractionDigits:dec,minimumFractionDigits:dec}); }
+function fmtShort(n) {
+  if (n>=1e6) return '$'+fmt(n/1e6,2)+'M';
+  if (n>=1e3) return '$'+fmt(n/1e3,1)+'K';
+  return '$'+fmt(n,0);
+}
+
+function renderTicker(prices) {
+  const items = [
+    {sym:'AAPL', p:prices.AAPL},
+    {sym:'NVDA', p:prices.NVDA},
+    {sym:'GS',   p:prices.GS},
+    {sym:'EUR/USD', p:prices['EUR/USD']},
+    {sym:'GBP/USD', p:prices['GBP/USD']},
+    {sym:'BTC',  p:prices.BTC},
+    {sym:'ETH',  p:prices.ETH},
+  ];
+  document.getElementById('ticker-bar').innerHTML = items.map(({sym,p})=>{
+    const chg = (Math.random()*2-1).toFixed(2);
+    const cls = chg>=0?'up':'dn';
+    const sign= chg>=0?'+':'';
+    return `<div class="ticker-item">
+      <span class="ticker-sym">${sym}</span>
+      <span class="ticker-price">${sym.includes('/')?(p||0).toFixed(4):'$'+(p||0).toFixed(2)}</span>
+      <span class="ticker-chg ${cls}">${sign}${chg}%</span>
+    </div>`;
+  }).join('');
+}
+
+function renderKPIs(exceptions, total) {
+  const matched = total - new Set(exceptions.map(e=>e.trade_id)).size;
+  const mr = ((matched/total)*100).toFixed(1);
+  const exp = exceptions.reduce((s,e)=>s+e.break_amount,0);
+  const crit = exceptions.filter(e=>e.severity==='critical').length;
+  document.getElementById('kpi-match').textContent = mr+'%';
+  document.getElementById('kpi-match-sub').textContent = `${matched} of ${total} trades clean`;
+  document.getElementById('kpi-exc').textContent = exceptions.length;
+  document.getElementById('kpi-exc-sub').textContent = 'Across 4 asset classes';
+  document.getElementById('kpi-exp').textContent = fmtShort(exp);
+  document.getElementById('kpi-crit').textContent = crit;
+}
+
+function renderFilters(exceptions) {
+  const counts = {all:exceptions.length};
+  exceptions.forEach(e=>{
+    counts[e.severity] = (counts[e.severity]||0)+1;
+    counts[e.asset_class] = (counts[e.asset_class]||0)+1;
+  });
+  const filters = [
+    {key:'all',label:`All (${counts.all})`},
+    {key:'critical',label:`Critical (${counts.critical||0})`},
+    {key:'equity',label:`Equity (${counts.equity||0})`},
+    {key:'fx',label:`FX (${counts.fx||0})`},
+    {key:'futures',label:`Futures (${counts.futures||0})`},
+    {key:'digital',label:`Digital (${counts.digital||0})`},
+  ];
+  document.getElementById('filter-bar').innerHTML = filters.map(f=>
+    `<button class="fbtn${STATE.filter===f.key?' on':''}" onclick="applyFilter('${f.key}',this)">${f.label}</button>`
+  ).join('');
+}
+
+function renderTable(exceptions) {
+  const f = STATE.filter;
+  const filtered = f==='all' ? exceptions :
+    f==='critical' ? exceptions.filter(e=>e.severity==='critical') :
+    exceptions.filter(e=>e.asset_class===f);
+
+  document.getElementById('exc-meta').textContent = `${filtered.length} exceptions · SQL-matched`;
+  const tbody = document.getElementById('exc-tbody');
+  tbody.innerHTML = '';
+
+  filtered.forEach(ex => {
+    const cls = classify(ex);
+    const tr = document.createElement('tr');
+    tr.className = 'erow';
+    tr.innerHTML = `
+      <td>${ex.trade_id}</td>
+      <td><span class="ap ${apCls[ex.asset_class]}">${apLbl[ex.asset_class]}</span></td>
+      <td style="font-weight:500">${ex.instrument}</td>
+      <td style="font-size:11px;color:var(--muted)">${ex.break_type.replace(/_/g,' ')}</td>
+      <td style="font-family:var(--mono);font-size:11px">${ex.internal_value.length>12?ex.internal_value.slice(0,12)+'…':ex.internal_value}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--danger)">${ex.counterparty_value.length>12?ex.counterparty_value.slice(0,12)+'…':ex.counterparty_value}</td>
+      <td style="font-family:var(--mono);font-size:11px">${fmtShort(ex.break_amount)}</td>
+      <td><span class="badge ${bCls[ex.severity]}">${ex.severity}</span></td>
+      <td>
+        <div class="cbar-wrap">
+          <div class="cbar"><div class="cfill" style="width:${cls.conf}%"></div></div>
+          <span class="cval">${cls.conf}%</span>
+        </div>
+      </td>`;
+    tr.onclick = () => showDetail(ex, cls, tr);
+    tbody.appendChild(tr);
+  });
+}
+
+function showDetail(ex, cls, tr) {
+  document.querySelectorAll('.erow').forEach(r=>r.classList.remove('sel'));
+  tr.classList.add('sel');
+  document.getElementById('detail-id').textContent = ex.trade_id;
+  document.getElementById('detail-body').innerHTML = `
+    <div class="drow"><span class="dlabel">Instrument</span><span class="dval">${ex.instrument}</span></div>
+    <div class="drow"><span class="dlabel">Asset class</span><span class="dval">${ex.asset_class}</span></div>
+    <div class="drow"><span class="dlabel">Counterparty</span><span class="dval">${ex.counterparty}</span></div>
+    <div class="drow"><span class="dlabel">Break field</span><span class="dval">${ex.field.replace(/_/g,' ')}</span></div>
+    <div class="drow"><span class="dlabel">Internal value</span><span class="dval" style="color:var(--accent)">${ex.internal_value}</span></div>
+    <div class="drow"><span class="dlabel">CP value</span><span class="dval" style="color:var(--danger)">${ex.counterparty_value}</span></div>
+    <div class="break-box">
+      <div class="break-lbl">Break exposure</div>
+      <div class="break-amt">$${fmt(ex.break_amount,2)}</div>
+    </div>
+    <div class="ai-box">
+      <div class="ai-lbl">Root cause analysis</div>
+      <div class="ai-cause">${cls.root}</div>
+      <div class="ai-action-text">→ ${cls.action}</div>
+    </div>
+    <div class="action-row">
+      <button class="abtn abtn-p" onclick="this.textContent='Escalated ✓';this.disabled=true">Escalate</button>
+      <button class="abtn abtn-g" onclick="this.textContent='Reviewed ✓';this.disabled=true">Mark reviewed</button>
+    </div>`;
+}
+
+function renderStats(exceptions, total) {
+  const exp = exceptions.reduce((s,e)=>s+e.break_amount,0);
+  const bySev = {};
+  exceptions.forEach(e=>{ bySev[e.severity]=(bySev[e.severity]||0)+1; });
+  document.getElementById('stats-meta').textContent = new Date().toLocaleTimeString();
+  document.getElementById('stat-rows').innerHTML = `
+    <div class="stat-row"><span class="slabel">Total trades</span><span class="sval">${total}</span></div>
+    <div class="stat-row"><span class="slabel">Matched (clean)</span><span class="sval" style="color:var(--success)">${total-new Set(exceptions.map(e=>e.trade_id)).size}</span></div>
+    <div class="stat-row"><span class="slabel">Exceptions</span><span class="sval" style="color:var(--warn)">${exceptions.length}</span></div>
+    <div class="stat-row"><span class="slabel">Critical</span><span class="sval" style="color:var(--danger)">${bySev.critical||0}</span></div>
+    <div class="stat-row"><span class="slabel">High</span><span class="sval" style="color:var(--warn)">${bySev.high||0}</span></div>
+    <div class="stat-row"><span class="slabel">Total exposure</span><span class="sval">$${fmt(exp,0)}</span></div>
+    <div class="stat-row"><span class="slabel">Price source</span><span class="sval" style="color:var(--accent)">${STATE.usingFallback?'Fallback':'Polygon.io'}</span></div>`;
+}
+
+function renderBreakTypes(exceptions) {
+  const counts = {};
+  exceptions.forEach(e=>{ counts[e.break_type]=(counts[e.break_type]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const max = sorted[0]?.[1]||1;
+  document.getElementById('btype-rows').innerHTML = sorted.map(([t,n])=>`
+    <div class="btype-row">
+      <span class="btype-label">${t.replace(/_/g,' ')}</span>
+      <div class="btype-bg"><div class="btype-fill" style="width:${Math.round(n/max*100)}%"></div></div>
+      <span class="btype-n">${n}</span>
+    </div>`).join('');
+}
+
+function applyFilter(f, btn) {
+  STATE.filter = f;
+  document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderTable(STATE.exceptions);
+  document.getElementById('detail-id').textContent = '— select a row';
+  document.getElementById('detail-body').innerHTML = '<div class="detail-empty">← Click any exception to see break detail and recommended action.</div>';
+}
+
+// ── Main pipeline ────────────────────────────────────────────
+async function startPipeline() {
+  const btn = document.getElementById('run-btn');
+  if (btn) { btn.disabled=true; btn.textContent='↻ Running...'; }
+
+  // Show loader if first run
+  if (document.getElementById('app').style.display==='none') {
+    document.getElementById('loader').style.display='flex';
+  }
+
+  step(1,'Fetching live prices from Polygon.io...');
+  await new Promise(r=>setTimeout(r,300));
+  const prices = await fetchPrices();
+  STATE.prices = prices;
+
+  step(2,'Generating synthetic trade positions...');
+  await new Promise(r=>setTimeout(r,200));
+  const trades = generateTrades(prices, 150);
+
+  step(3,'Running SQL matching engine...');
+  await new Promise(r=>setTimeout(r,300));
+  const exceptions = matchTrades(trades);
+  // Sort by severity then amount
+  const sevOrder = {critical:1,high:2,medium:3,low:4};
+  exceptions.sort((a,b)=> sevOrder[a.severity]-sevOrder[b.severity] || b.break_amount-a.break_amount);
+  STATE.exceptions = exceptions;
+
+  step(4,'Classifying exceptions...');
+  await new Promise(r=>setTimeout(r,200));
+
+  step(5,'Building dashboard...');
+  await new Promise(r=>setTimeout(r,200));
+
+  // Render everything
+  renderTicker(prices);
+  renderKPIs(exceptions, 150);
+  renderFilters(exceptions);
+  STATE.filter = 'all';
+  renderTable(exceptions);
+  renderStats(exceptions, 150);
+  renderBreakTypes(exceptions);
+
+  const now = new Date();
+  document.getElementById('run-time').textContent =
+    now.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+
+    now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+  finishLoad();
+  if (btn) { btn.disabled=false; btn.textContent='↻ Re-run reconciliation'; }
+}
+
+// Start on load
+startPipeline();
+</script>
+</body>
+</html>
