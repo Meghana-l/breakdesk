@@ -66,20 +66,6 @@ Claude returns root cause, recommended action, confidence score, and escalation 
 
 ---
 
-## Setting up live prices
-
-1. Sign up free at [polygon.io](https://polygon.io)
-2. Copy your API key
-3. Open `index.html`, find:
-   ```js
-   const POLYGON_KEY = 'YOUR_POLYGON_API_KEY';
-   ```
-4. Replace with your key and save
-
-Without a key the dashboard falls back to realistic static prices and still runs the full pipeline.
-
----
-
 ## File structure
 
 ```
