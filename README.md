@@ -83,5 +83,5 @@ breakdesk/
 ## Built by
 
 **Meghana Lakshminarayana Swamy**
-MS Business Analytics · University of New Haven · GPA 3.81 · May 2026
+MS Business Analytics · University of New Haven · GPA 3.84 · May 2026
 ECBA Certified · [meghana-l.github.io](https://meghana-l.github.io) · meghana.drlnswamy@gmail.com
